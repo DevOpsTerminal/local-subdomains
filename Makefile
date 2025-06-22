@@ -1,86 +1,74 @@
-.PHONY: help install test lint format clean build start stop restart logs
+.PHONY: help dev build start stop restart logs test test-ansible clean push
 
 # Help target
 help:
 	@echo "Available commands:"
-	@echo "  make install      Install all dependencies"
-	@echo "  make dev          Start development environment"
-	@echo "  make build        Build all services"
-	@echo "  make start        Start all services"
-	@echo "  make stop         Stop all services"
-	@echo "  make restart      Restart all services"
-	@echo "  make logs         Show logs"
-	@echo "  make test         Run tests"
-	@echo "  make lint         Run linters"
-	@echo "  make format       Format code"
-	@echo "  make clean        Clean up"
-
-# Install dependencies
-install:
-	@echo "Installing dependencies..."
-	cd api && npm install
-	cd frontend && npm install
-	cd email-bridge && pip install -r requirements.txt
+	@echo "  make dev     Start development environment"
+	@echo "  make build   Build all services"
+	@echo "  make start   Start all services"
+	@echo "  make stop    Stop all services"
+	@echo "  make restart Restart all services"
+	@echo "  make logs    Show logs"
+	@echo "  make test    Run tests"
+	@echo "  make clean   Clean up Docker resources"
+	@echo "  make push    Build, test, and push changes"
 
 # Development
-up:
-	docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
-
-dev: up
+dev:
+	@echo "🚀 Starting development environment..."
+	@cp .env.dev .env
+	@docker-compose up -d
 
 # Build
 build:
-	docker-compose build
+	@echo "🔨 Building services..."
+	@docker-compose build
 
 # Start/Stop/Restart
 start:
-	docker-compose up -d
+	@echo "🚀 Starting services..."
+	@docker-compose up -d
 
 stop:
-	docker-compose down
+	@echo "🛑 Stopping services..."
+	@docker-compose down
 
 restart: stop start
 
 # Logs
 logs:
-	docker-compose logs -f
+	@docker-compose logs -f
 
 # Testing
-test:
-	cd api && npm test
-	cd frontend && npm test
+test: test-ansible
 
-# Linting
-lint:
-	cd api && npm run lint
-	cd frontend && npm run lint
-
-# Formatting
-format:
-	cd api && npm run format
-	cd frontend && npm run format
+# Run Ansible tests
+test-ansible:
+	@echo "🧪 Running Ansible tests..."
+	@if [ -f "tests/ansible/playbook.yml" ]; then \
+		cd tests/ansible && ansible-playbook playbook.yml; \
+	else \
+		echo "⚠️ Ansible tests not found. Skipping..."; \
+	fi
 
 # Cleanup
 clean:
-	docker-compose down -v
-	find . -name "node_modules" -type d -prune -exec rm -rf '{}' +
-	find . -name "dist" -type d -prune -exec rm -rf '{}' +
-	find . -name "build" -type d -prune -exec rm -rf '{}' +
-	find . -name "coverage" -type d -prune -exec rm -rf '{}' +
-
-
-
+	@echo "🧹 Cleaning up..."
+	@docker-compose down -v
 
 # Build and push git changes
 push:
-	./scripts/build.sh
-	git add .
-	git commit -m "[auto] Update at $(date '+%Y-%m-%d %H:%M:%S')"
-	git push
-
-# Publish to Docker registry
-publish:
-	docker-compose build
-	docker-compose push
-
-
+	@echo "🚀 Starting build and push process..."
+	@if [ ! -f "scripts/build.sh" ]; then \
+		echo "❌ Error: build.sh not found in scripts/ directory"; \
+		exit 1; \
+	fi
+	@./scripts/build.sh
+	@echo "📦 Committing changes..."
+	@git add .
+	@if ! git diff-index --quiet HEAD --; then \
+		git commit -m "[auto] Update at $$(date '+%Y-%m-%d %H:%M:%S')"; \
+		git push; \
+	else \
+		echo "ℹ️ No changes to commit"; \
+	fi

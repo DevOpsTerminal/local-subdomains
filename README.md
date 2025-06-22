@@ -45,6 +45,45 @@ This project sets up a local development environment with multiple subdomains us
 3. Update the environment files with the new domain
 4. Restart the services
 
+## Testing with Ansible
+
+This project includes Ansible tests to verify the subdomain configuration. The tests check if all configured subdomains are accessible and return the expected HTTP status code.
+
+### Prerequisites
+
+- Ansible 2.9 or later
+- Python 3.6 or later
+
+### Running Tests
+
+1. Install the test dependencies:
+   ```bash
+   pip install -r tests/ansible/requirements.txt
+   ```
+
+2. Make sure your services are running:
+   ```bash
+   make dev
+   ```
+
+3. Run the Ansible tests:
+   ```bash
+   cd tests/ansible
+   ansible-playbook playbook.yml
+   ```
+
+### Test Configuration
+
+You can modify the test configuration in `tests/ansible/playbook.yml`:
+
+```yaml
+vars:
+  test_domains:
+    - "app1.vcap.me"
+    - "app2.vcap.me"
+  expected_status: 200
+```
+
 ## Troubleshooting
 
 ### Domain Resolution Issues

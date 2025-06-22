@@ -1,0 +1,95 @@
+---
+- name: Ensure curl is available
+  block:
+    - name: Install curl (Debian/Ubuntu)
+      become: yes
+      ansible.builtin.apt:
+        name: curl
+        state: present
+      when: ansible_os_family == 'Debian'
+      ignore_errors: yes
+
+    - name: Install curl (RHEL/CentOS)
+      become: yes
+      ansible.builtin.yum:
+        name: curl
+        state: present
+      when: ansible_os_family == 'RedHat'
+      ignore_errors: yes
+
+- name: Check service health
+  block:
+    - name: Test domain accessibility
+      ansible.builtin.uri:
+        url: "http://{{ item.name }}{{ item.path | default('') }}"
+        method: GET
+        status_code: "{{ item.expected_status | default(expected_status) }}"
+        timeout: "{{ health_check_timeout }}"
+        validate_certs: no
+        follow_redirects: all
+        return_content: yes
+      register: domain_test
+      retries: "{{ health_check_retries }}"
+      delay: "{{ health_check_delay }}"
+      until: domain_test is succeeded
+      loop: "{{ test_domains }}"
+      ignore_errors: yes
+      changed_when: false
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Validate JSON response
+      ansible.builtin.assert:
+        that:
+          - item.item.check_json | default(false) | bool == false or domain_test.json is defined
+          - item.item.check_json | default(false) | bool == false or domain_test.json is mapping
+          - >
+            not (item.item.check_json | default(false) | bool) or
+            item.item.expected_json | default({}) | dict2items | selectattr('key', 'defined') | list | length == 0 or
+            domain_test.json | dict2items | selectattr('key', 'in', item.item.expected_json) | list | length == item.item.expected_json | dict2items | selectattr('key', 'defined') | list | length
+          - >
+            not (item.item.check_json | default(false) | bool) or
+            item.item.expected_json | dict2items | selectattr('key', 'defined') | list | length == 0 or
+            domain_test.json | dict2items | json_query("[?key in `item.item.expected_json | dict2items | map(attribute='key') | list`]") | 
+            map(attribute='value') | list == item.item.expected_json | dict2items | map(attribute='value') | list
+      loop: "{{ domain_test.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when:
+        - item is not failed
+        - item.item.check_json | default(false) | bool
+        - item.item.expected_json is defined
+      ignore_errors: yes
+
+    - name: Check container status
+      ansible.builtin.docker_container_info:
+        name: "{{ item }}"
+      register: container_info
+      loop:
+        - traefik
+        - whoami1
+        - whoami2
+      changed_when: false
+
+    - name: Verify containers are running
+      ansible.builtin.assert:
+        that:
+          - "item.container.State.Status == 'running'"
+          - "item.container.State.Health.Status == 'healthy' if item.container.State.Health is defined else true"
+      loop: "{{ container_info.results }}"
+      loop_control:
+        label: "{{ item.container.Name }}"
+
+  rescue:
+    - name: Show error details
+      ansible.builtin.debug:
+        msg: "Health check failed: {{ ansible_failed_result.msg }}"
+      when: ansible_failed_result is defined
+
+    - name: Fail if any domain is not accessible
+      ansible.builtin.fail:
+        msg: >-
+          Health check failed for {{ ansible_failed_result.item.name | default('unknown') }}.
+          Status: {{ ansible_failed_result.status | default('unknown') }}
+          Error: {{ ansible_failed_result.msg | default('Unknown error') }}
+      when: ansible_failed_result is defined

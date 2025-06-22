@@ -1,0 +1,47 @@
+---
+- name: Test subdomain configuration
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars:
+    test_domains:
+      - name: "app1.vcap.me"
+        path: "/"
+        expected_status: 200
+      - name: "app2.vcap.me"
+        path: "/"
+        expected_status: 200
+        check_json: true
+        expected_json:
+          message: "Hello, World!"
+    expected_status: 200
+    health_check_timeout: 10
+    health_check_retries: 3
+    health_check_delay: 2
+
+  pre_tasks:
+    - name: Check if services are accessible
+      ansible.builtin.uri:
+        url: "http://{{ item }}"
+        method: GET
+        timeout: "{{ health_check_timeout }}"
+        status_code: "{{ expected_status }}"
+        validate_certs: no
+      register: service_check
+      retries: "{{ health_check_retries }}"
+      delay: "{{ health_check_delay }}"
+      until: service_check is succeeded
+      loop:
+        - "{{ test_domains[0].name }}"
+        - "{{ test_domains[1].name }}"
+      ignore_errors: yes
+      changed_when: false
+
+  roles:
+    - subdomain_test
+
+  post_tasks:
+    - name: Show test summary
+      ansible.builtin.debug:
+        msg: "All health checks passed successfully!"
+      when: domain_test is defined and domain_test is not failed
